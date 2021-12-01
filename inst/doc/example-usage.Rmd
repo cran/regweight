@@ -1,0 +1,135 @@
+---
+title: "Example Usage"
+author: Drew Dimmery (drew.dimmery@gmail.com)
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  rmarkdown::html_vignette:
+    toc: true
+fig_width: 5
+fig_height: 5
+vignette: >
+  %\VignetteIndexEntry{Example Usage}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+<style type="text/css">
+div.main-container {
+  max-width: 1800px;
+  margin-left: auto;
+  margin-right: auto;
+}
+</style>
+
+```{r echo=FALSE}
+knitr::opts_chunk$set(fig.width=5, fig.height=5) 
+```
+
+# Introduction
+
+Aronow and Samii (2015) provide a convenient way to understand why a linear regression provides the particular estimate that it does. Given the following linear model estimated by OLS,
+
+$$
+Y = \alpha + \tau A + \beta \boldsymbol{X}
+$$
+
+In the presence of heterogeneity in the effect of $A$ on $Y$, however, $\hat{\tau}$ will be a weighted average of the unit-specific effects, $\tau_i$:
+
+$$
+\frac{\mathbb{E}[w_i \tau_i]}{\mathbb{E}[w_i]}\quad \mathrm{where}\; w_i = (A_i - \mathbb{E}[A_i \mid X_i])^2
+$$
+
+This weight is equal to the conditional variance of $A$ in expectation: $\mathbb{E}[w_i \mid X_i] = \mathrm{var}(A_i \mid X_i)$.
+
+These weights can be easily estimated through a partial linear regression of the form:
+
+$$
+A = \gamma \boldsymbol{X}
+$$
+
+Implicit regression weights are then just the squared residuals of this regression.
+
+The intuition of this is all simply to show that a coefficient in OLS will, in general, be the up-weighted when it's harder to explain from the other covariates in the model. If a unit's $A_i$ is very easy to predict, then it will not figure prominently in the OLS estimate of the effect.
+
+This is distinct from more conventional regression diagnostics like leverage, because those focus on how the entire vector of coefficients change. Most analysts, however, have specific hypotheses on specific coefficients, however, so the implicit regression weights demonstrate, essentially, the term-specific leverage.
+
+# Load packages and setup environment
+
+```{r setup}
+library(dplyr)
+library(ggplot2)
+library(sf)
+library(regweight)
+data("LaLonde", package = "CBPS")
+
+df <- filter(LaLonde, (exper == 1 && treat == 1) || (exper == 0 && treat == 0))
+
+model <- lm(
+  log(re78 + 1) ~ treat + age + educ + black + hisp + married + nodegr + log(re74 + 1) + log(re75 + 1) + re74.miss, 
+  df
+)
+summary(model)
+```
+
+# Examine regression weights
+
+Plots will make a best effort to infer the appropriate type of a given covariate. If you aren't happy with how they look, it's simple enough to use the underlying functions called by the S3 method directly. They are:
+
+* `regweight::plot_weighting_discrete`
+* `regweight::plot_weighting_continuous`
+* `regweight::plot_weighting_map`
+
+```{r}
+rw_mod <- calculate_weights(model, "treat")
+hist(rw_mod) + scale_x_continuous("Weight")
+```
+
+## Discrete covariates
+```{r}
+plot(rw_mod, df$married) + scale_x_continuous("Married", breaks = c(0,1))
+```
+
+```{r}
+plot(rw_mod, df$nodegr) + scale_x_continuous("No degree", breaks = c(0,1))
+```
+
+```{r}
+plot(rw_mod, df$black) + scale_x_continuous("Black", breaks = c(0,1))
+```
+
+## Continuous covariates
+```{r}
+plot(rw_mod, df$age) + scale_x_continuous("Age")
+```
+
+```{r}
+plot(rw_mod, df$re74) + scale_x_continuous("Income (1974)")
+```
+
+# Mapping
+
+For the sake of example, let's imagine that we had geographical information on each unit, as well. Geometries/shapes should be specified in `sf::sfc` format.
+
+```{r fig.width = 6}
+state_shapes <- USAboundaries::us_states()
+state_shapes <- filter(state_shapes, !(state_abbr %in% c("HI", "PR", "AK")))
+# Necessary due to https://github.com/r-spatial/sf/issues/1419
+suppressWarnings(st_crs(state_shapes) <- 4326)
+pr_state <- seq(1, 10, length = nrow(state_shapes))
+pr_state <- pr_state / sum(pr_state)
+df$geometry <- sample(state_shapes$geometry, nrow(df), replace = TRUE, prob = pr_state)
+
+plot(rw_mod, df$geometry)
+```
+
+# Summary table
+
+It's also easy to include a table of summary statistics for the nominal and implicit samples across a variety of covariates:
+
+```{r}
+summary(
+  rw_mod,
+  df %>% select(re74, re74.miss, age, married, nodegr),
+  output = "html"
+)
+```
