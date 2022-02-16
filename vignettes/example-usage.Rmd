@@ -22,7 +22,7 @@ div.main-container {
 </style>
 
 ```{r echo=FALSE}
-knitr::opts_chunk$set(fig.width=5, fig.height=5) 
+knitr::opts_chunk$set(fig.width = 5, fig.height = 5) 
 ```
 
 # Introduction
@@ -49,7 +49,7 @@ $$
 
 Implicit regression weights are then just the squared residuals of this regression.
 
-The intuition of this is all simply to show that a coefficient in OLS will, in general, be the up-weighted when it's harder to explain from the other covariates in the model. If a unit's $A_i$ is very easy to predict, then it will not figure prominently in the OLS estimate of the effect.
+The intuition of this is that a unit-specific coefficient in OLS will, in general, be up-weighted when it's harder to explain that variable's value from the other covariates in the model. If a unit's $A_i$ is very easy to predict, then it will not figure prominently in the aggregate OLS estimate of the effect.
 
 This is distinct from more conventional regression diagnostics like leverage, because those focus on how the entire vector of coefficients change. Most analysts, however, have specific hypotheses on specific coefficients, however, so the implicit regression weights demonstrate, essentially, the term-specific leverage.
 
@@ -62,7 +62,10 @@ library(sf)
 library(regweight)
 data("LaLonde", package = "CBPS")
 
-df <- filter(LaLonde, (exper == 1 && treat == 1) || (exper == 0 && treat == 0))
+df <- dplyr::filter(
+  LaLonde,
+  (exper == 1 & treat == 1) | (exper == 0 & treat == 0)
+)
 
 model <- lm(
   log(re78 + 1) ~ treat + age + educ + black + hisp + married + nodegr + log(re74 + 1) + log(re75 + 1) + re74.miss, 
@@ -86,15 +89,15 @@ hist(rw_mod) + scale_x_continuous("Weight")
 
 ## Discrete covariates
 ```{r}
-plot(rw_mod, df$married) + scale_x_continuous("Married", breaks = c(0,1))
+plot(rw_mod, df$married) + scale_x_continuous("Married", breaks = c(0, 1))
 ```
 
 ```{r}
-plot(rw_mod, df$nodegr) + scale_x_continuous("No degree", breaks = c(0,1))
+plot(rw_mod, df$nodegr) + scale_x_continuous("No degree", breaks = c(0, 1))
 ```
 
 ```{r}
-plot(rw_mod, df$black) + scale_x_continuous("Black", breaks = c(0,1))
+plot(rw_mod, df$black) + scale_x_continuous("Black", breaks = c(0, 1))
 ```
 
 ## Continuous covariates
@@ -104,22 +107,6 @@ plot(rw_mod, df$age) + scale_x_continuous("Age")
 
 ```{r}
 plot(rw_mod, df$re74) + scale_x_continuous("Income (1974)")
-```
-
-# Mapping
-
-For the sake of example, let's imagine that we had geographical information on each unit, as well. Geometries/shapes should be specified in `sf::sfc` format.
-
-```{r fig.width = 6}
-state_shapes <- USAboundaries::us_states()
-state_shapes <- filter(state_shapes, !(state_abbr %in% c("HI", "PR", "AK")))
-# Necessary due to https://github.com/r-spatial/sf/issues/1419
-suppressWarnings(st_crs(state_shapes) <- 4326)
-pr_state <- seq(1, 10, length = nrow(state_shapes))
-pr_state <- pr_state / sum(pr_state)
-df$geometry <- sample(state_shapes$geometry, nrow(df), replace = TRUE, prob = pr_state)
-
-plot(rw_mod, df$geometry)
 ```
 
 # Summary table
@@ -132,4 +119,20 @@ summary(
   df %>% select(re74, re74.miss, age, married, nodegr),
   output = "html"
 )
+```
+
+# Mapping
+
+For the sake of example, let's imagine that we had geographical information on each unit, as well. Geometries/shapes should be specified in `sf::sfc` format.
+
+```{r fig.width = 6}
+state_shapes <- USAboundaries::us_states()
+state_shapes <- dplyr::filter(state_shapes, !(state_abbr %in% c("HI", "PR", "AK")))
+# Necessary due to https://github.com/r-spatial/sf/issues/1419
+suppressWarnings(sf::st_crs(state_shapes) <- 4326)
+pr_state <- seq(1, 10, length = nrow(state_shapes))
+pr_state <- pr_state / sum(pr_state)
+df$geometry <- sample(state_shapes$geometry, nrow(df), replace = TRUE, prob = pr_state)
+
+plot(rw_mod, df$geometry)
 ```
